@@ -2,6 +2,73 @@ var express = require('express');
 var router = express.Router();
 let userModel = require('../schemas/users')
 
+/* TEST ENDPOINT - check request body */
+router.post('/test', async function (req, res) {
+    console.log("=== TEST ENDPOINT ===");
+    console.log("Headers:", req.headers);
+    console.log("Body:", req.body);
+    console.log("Content-Type:", req.get('Content-Type'));
+    res.send({
+        message: "Test endpoint",
+        headers: req.headers,
+        body: req.body,
+        contentType: req.get('Content-Type')
+    })
+});
+
+/* CREATE USER - NEW TEST ROUTE */
+router.post('/', async function (req, res) {
+    try {
+        console.log("=== CREATE USER ENDPOINT ===");
+        console.log("Request body:", req.body);
+        
+        if (!req.body.username || !req.body.password || !req.body.email || !req.body.role) {
+            return res.status(400).send({
+                message: "Missing fields",
+                received: req.body
+            })
+        }
+
+        // Check if role exists
+        let roleModel = require('../schemas/roles');
+        let roleExists = await roleModel.findOne({
+            isDeleted: false,
+            _id: req.body.role
+        });
+
+        if (!roleExists) {
+            return res.status(404).send({
+                message: "Role not found"
+            })
+        }
+
+        let newUser = new userModel({
+            username: req.body.username,
+            password: req.body.password,
+            email: req.body.email,
+            fullName: req.body.fullName || "",
+            avatarUrl: req.body.avatarUrl || "https://i.sstatic.net/l60Hf.png",
+            role: req.body.role,
+            status: false,
+            loginCount: 0
+        })
+        
+        await newUser.save();
+        await newUser.populate('role', 'name description');
+        
+        console.log("User created successfully:", newUser._id);
+        res.status(201).send({
+            message: "User created successfully",
+            data: newUser
+        })
+    } catch (error) {
+        console.error("Error creating user:", error.message);
+        res.status(400).send({
+            message: error.message
+        })
+    }
+});
+
 /* GET all users. */
 router.get('/', async function (req, res, next) {
     try {
@@ -47,18 +114,60 @@ router.get('/:id', async function (req, res, next) {
 /* CREATE new user. */
 router.post('/', async function (req, res) {
     try {
+        // Debug: log the request body
+        console.log("Request body:", req.body);
+        
+        // Validate required fields
+        if (!req.body.username || !req.body.password || !req.body.email || !req.body.role) {
+            console.log("Validation failed:", {
+                username: req.body.username,
+                password: req.body.password,
+                email: req.body.email,
+                role: req.body.role
+            });
+            return res.status(400).send({
+                message: "Username, password, email and role are required",
+                received: {
+                    username: req.body.username,
+                    password: req.body.password,
+                    email: req.body.email,
+                    role: req.body.role
+                }
+            })
+        }
+
+        // Check if role exists
+        let roleModel = require('../schemas/roles');
+        let roleExists = await roleModel.findOne({
+            isDeleted: false,
+            _id: req.body.role
+        });
+
+        if (!roleExists) {
+            return res.status(404).send({
+                message: "Role not found or invalid role ID"
+            })
+        }
+
         let newUser = new userModel({
             username: req.body.username,
             password: req.body.password,
             email: req.body.email,
-            fullName: req.body.fullName,
-            avatarUrl: req.body.avatarUrl,
+            fullName: req.body.fullName || "",
+            avatarUrl: req.body.avatarUrl || "https://i.sstatic.net/l60Hf.png",
             role: req.body.role,
             status: req.body.status || false,
             loginCount: req.body.loginCount || 0
         })
         await newUser.save()
-        res.send(newUser)
+        
+        // Populate role info before sending response
+        await newUser.populate({
+            path: 'role',
+            select: 'name description'
+        });
+        
+        res.status(201).send(newUser)
     } catch (error) {
         res.status(400).send({
             message: error.message
